@@ -15,6 +15,9 @@ bool exitProcess()
 int main(int argc, const char* argv[])
 {
 	const unsigned int default_frequency = 10; // In milliseconds
+	const size_t float_size = sizeof(float);
+
+	char float_bytes[float_size];
 
 	int parameter_frequency = (argc > 1 ? atoi(argv[1]) : 0);
 
@@ -36,7 +39,20 @@ int main(int argc, const char* argv[])
 
 			vr::HmdMatrix34_t matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
 
-			std::cout << matrix.m[0][0] << std::endl;
+			for(size_t i = 0; i < 3; ++i)
+			{
+				for(size_t j = 0; j < 4; ++j)
+				{
+					memcpy(float_bytes, &matrix.m[i][j], float_size);
+
+					for(size_t k = 0; k < float_size; ++k)
+					{
+						std::cout << float_bytes[k];
+					}
+				}
+			}
+
+			std::cout << std::flush;
 		}
 
 		vr::VR_Shutdown();
