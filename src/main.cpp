@@ -1,6 +1,7 @@
 #include "openvr.h"
 
 #include <future>
+#include <iomanip>
 #include <iostream>
 
 bool exitProcess()
@@ -33,6 +34,8 @@ int main(int argc, const char* argv[])
 
 		std::future<bool> future = std::async(exitProcess);
 
+		std::cout << std::hex;
+
 		while(future.wait_for(std::chrono::milliseconds(frequency)) != std::future_status::ready || !future.get())
 		{
 			vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
@@ -47,12 +50,12 @@ int main(int argc, const char* argv[])
 
 					for(size_t k = 0; k < float_size; ++k)
 					{
-						std::cout << float_bytes[k];
+						std::cout << std::setfill('0') << std::setw(2) << (0xFF & float_bytes[k]);
 					}
 				}
 			}
 
-			std::cout << std::flush;
+			std::cout << std::endl;
 		}
 
 		vr::VR_Shutdown();

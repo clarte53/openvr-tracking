@@ -19,6 +19,7 @@ To close the application, press the enter key.
 
 # Data format
 
-The tracking data is written as blocks of bytes, with 12 floats per frame,
-representing the HmdMatrix34_t data from OpenVR API. This matrix represent
-the head pose of the HMD in the tracking system.
+The tracking data is written as blocks of bytes in hexadecimal, with 12 floats
+per frame. Each frame is written on a new line. A frame represents the
+HmdMatrix34_t data from OpenVR API for the head pose of the HMD in the tracking
+system.
