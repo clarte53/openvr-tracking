@@ -18,3 +18,9 @@ add_executable(openvr-tracking
 target_link_libraries(openvr-tracking
 	openvr_api
 )
+
+add_custom_command(TARGET openvr-tracking POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/openvr/bin/win64/openvr_api.dll"
+    $<TARGET_FILE_DIR:openvr-tracking>
+)
