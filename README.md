@@ -15,6 +15,8 @@ The frequency is expected to be an unsigned integer representing the timespan
 between to captured frame, in milliseconds. The default value is 10
 milliseconds.
 
+To close the application, press the enter key.
+
 # Data format
 
 The tracking data is written as blocks of bytes, with 12 floats per frame,
