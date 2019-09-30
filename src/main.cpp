@@ -1,5 +1,6 @@
 #include "openvr.h"
 
+#include <chrono>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -13,11 +14,23 @@ bool exitProcess()
 	return line.empty();
 }
 
+void print(const void* data, char* bytes, size_t size)
+{
+	memcpy(bytes, data, size);
+
+	for(size_t i = 0; i < size; ++i)
+	{
+		std::cout << std::setfill('0') << std::setw(2) << (0xFF & bytes[i]);
+	}
+}
+
 int main(int argc, const char* argv[])
 {
 	const unsigned int default_frequency = 10; // In milliseconds
+	const size_t long_size = sizeof(long long);
 	const size_t float_size = sizeof(float);
 
+	char long_bytes[long_size];
 	char float_bytes[float_size];
 
 	int parameter_frequency = (argc > 1 ? atoi(argv[1]) : 0);
@@ -38,7 +51,13 @@ int main(int argc, const char* argv[])
 
 		while(future.wait_for(std::chrono::milliseconds(frequency)) != std::future_status::ready || !future.get())
 		{
+			const auto time = std::chrono::system_clock::now();
+
 			vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
+
+			const long long timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
+
+			print(&timestamp, long_bytes, long_size);
 
 			vr::HmdMatrix34_t matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
 
@@ -46,12 +65,7 @@ int main(int argc, const char* argv[])
 			{
 				for(size_t j = 0; j < 4; ++j)
 				{
-					memcpy(float_bytes, &matrix.m[i][j], float_size);
-
-					for(size_t k = 0; k < float_size; ++k)
-					{
-						std::cout << std::setfill('0') << std::setw(2) << (0xFF & float_bytes[k]);
-					}
+					print(&matrix.m[i][j], float_bytes, float_size);
 				}
 			}
 
