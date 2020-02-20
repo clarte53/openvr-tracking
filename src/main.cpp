@@ -1,5 +1,5 @@
 #include "openvr.h"
-#include "sockpp/acceptor.h"
+#include "sockpp/tcp_acceptor.h"
 
 #include <chrono>
 #include <future>
@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <list>
 
 bool exitProcess()
 {
@@ -65,11 +66,10 @@ public:
 		new_message.notify_all();
 	}
 
-	void print(std::ostream& stream) {
+	std::string wait_and_getcopy() {
 		std::unique_lock<std::mutex> lk(mtx);
 		new_message.wait(lk);
-		stream << ss.str();
-		stream.flush();
+		return ss.str();
 	}
 
 private:
@@ -83,6 +83,7 @@ private:
 		}
 	}
 };
+
 
 void CollectMessage(Message* msg, unsigned int frequency) {
 	vr::EVRInitError error;
@@ -112,19 +113,83 @@ void CollectMessage(Message* msg, unsigned int frequency) {
 }
 
 
-class CoutMessagePrinter {
+class MessageProvider {
+protected:
 	Message& msg;
 	bool stop;
 public:
-	CoutMessagePrinter(Message& message) : msg(message), stop(false) {}
+	MessageProvider(Message& message) : msg(message), stop(false) {}
+	virtual ~MessageProvider() {}
 
-	void setStop() {
+	virtual void setStop() {
 		stop = true;
 	}
 
-	void run() {
+	virtual void run() = 0;
+};
+
+
+class CoutMessagePrinter: public MessageProvider {
+public:
+	CoutMessagePrinter(Message& message) : MessageProvider(message) {}
+	virtual ~CoutMessagePrinter() {}
+
+	virtual void run() final {
 		while (!stop) {
-			msg.print(std::cout);
+			std::string message = msg.wait_and_getcopy();
+			std::cout << message;
+			std::cout.flush();
+		}
+	}
+};
+
+
+class ServerMessageProvider: public MessageProvider {
+	int socket_port = 10000;
+	sockpp::tcp_acceptor acc;
+
+public:
+	ServerMessageProvider(Message& message, int port): MessageProvider(message), socket_port(port), acc(port) {}
+	virtual ~ServerMessageProvider() {}
+
+	virtual void setStop() final {
+		MessageProvider::setStop();
+		acc.close();
+		acc.destroy();
+	}
+
+	virtual void run() final {
+		if (!acc) {
+			std::cerr << "Error creating the acceptor: " << acc.last_error_str() << std::endl;
+			return;
+		}
+		std::cout << "Awaiting connections on port " << socket_port << "..." << std::endl;
+
+		while (!stop) {
+			sockpp::inet_address peer;
+			sockpp::tcp_socket sock = acc.accept(&peer);
+			if (!stop) {
+				std::cout << "Received a connection request from " << peer << std::endl;
+				if (!sock) {
+					std::cerr << "Error accepting incoming connection: " << acc.last_error_str() << std::endl;
+				}
+				else {
+					std::thread thr(&ServerMessageProvider::run_write_message, this, std::move(sock));
+					thr.detach();
+				}
+			}
+		}
+	}
+
+private:
+	void run_write_message(sockpp::tcp_socket sock) {
+		while (!stop) {
+			std::string message = msg.wait_and_getcopy();
+			ssize_t sz = sock.write(message);
+			if (sz != message.size()) {
+				std::cerr << sock.last_error_str() << std::endl;
+				break;
+			}
 		}
 	}
 };
@@ -132,6 +197,8 @@ public:
 
 int main(int argc, const char* argv[])
 {
+	sockpp::socket_initializer sockInit;
+
 	const unsigned int default_frequency = 10; // In milliseconds
 	Message msg;
 
@@ -143,15 +210,21 @@ int main(int argc, const char* argv[])
 	// create collect
 	std::thread th_collect(CollectMessage, &msg, frequency);
 
-	// create consumers
-	CoutMessagePrinter printer(msg);
-	std::thread th_print(&CoutMessagePrinter::run, &printer);
+	MessageProvider* provider = nullptr;
+
+	if (socket_port == 0) {
+		provider = new CoutMessagePrinter(msg);
+	} else {
+		provider = new ServerMessageProvider(msg, socket_port);
+	}
+
+	std::thread th_print(&MessageProvider::run, provider);
 
 	// Wait collect thread finished
 	th_collect.join();
 
 	// Stop consumers
-	printer.setStop();
+	provider->setStop();
 
 	// Signal message to free consumers
 	msg.signal();

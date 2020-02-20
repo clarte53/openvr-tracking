@@ -31,7 +31,7 @@ cd build
 cmake -DCMAKE_INSTALL_PREFIX=.. ..
 ```
 
-open and build `sockpp.sln`.
+open and build `sockpp.sln` in Release x64 and generate INSTALL project.
 
 Next build the final application
 

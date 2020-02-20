@@ -20,6 +20,7 @@ add_executable(openvr-tracking
 target_link_libraries(openvr-tracking
 	openvr_api
 	sockpp-static
+	ws2_32
 )
 
 add_custom_command(TARGET openvr-tracking POST_BUILD
