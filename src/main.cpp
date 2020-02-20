@@ -24,6 +24,7 @@ class Message {
 	char* long_bytes;
 	char* float_bytes;
 	std::mutex mtx;
+	std::condition_variable new_message;
 
 public:
 	Message() {
@@ -38,7 +39,7 @@ public:
 	}
 
 	void set(unsigned long long timestamp, vr::HmdMatrix34_t& matrix) {
-		std::lock_guard<std::mutex> lk(mtx);
+		std::unique_lock<std::mutex> lk(mtx);
 
 		//Reset buffer content
 		ss.str("");
@@ -54,12 +55,21 @@ public:
 			}
 		}
 		ss<<std::endl;
+		new_message.notify_all();
 	}
 
-	void print() {
-		std::lock_guard<std::mutex> lk(mtx);
-		std::cout << ss.str();
-		std::cout.flush();
+	void signal() {
+		std::unique_lock<std::mutex> lk(mtx);
+		ss.str("");
+		ss.clear();
+		new_message.notify_all();
+	}
+
+	void print(std::ostream& stream) {
+		std::unique_lock<std::mutex> lk(mtx);
+		new_message.wait(lk);
+		stream << ss.str();
+		stream.flush();
 	}
 
 private:
@@ -74,6 +84,52 @@ private:
 	}
 };
 
+void CollectMessage(Message* msg, unsigned int frequency) {
+	vr::EVRInitError error;
+
+	vr::IVRSystem* vr_system = vr::VR_Init(&error, vr::EVRApplicationType::VRApplication_Background);
+
+	if (error == vr::EVRInitError::VRInitError_None)
+	{
+		vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+
+		std::future<bool> future = std::async(exitProcess);
+
+		while (future.wait_for(std::chrono::milliseconds(frequency)) != std::future_status::ready || !future.get())
+		{
+			const auto time = std::chrono::system_clock::now();
+
+			vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
+
+			const unsigned long long timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
+			vr::HmdMatrix34_t matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
+
+			msg->set(timestamp, matrix);
+		}
+
+		vr::VR_Shutdown();
+	}
+}
+
+
+class CoutMessagePrinter {
+	Message& msg;
+	bool stop;
+public:
+	CoutMessagePrinter(Message& message) : msg(message), stop(false) {}
+
+	void setStop() {
+		stop = true;
+	}
+
+	void run() {
+		while (!stop) {
+			msg.print(std::cout);
+		}
+	}
+};
+
+
 int main(int argc, const char* argv[])
 {
 	const unsigned int default_frequency = 10; // In milliseconds
@@ -84,31 +140,24 @@ int main(int argc, const char* argv[])
 
 	unsigned int frequency = (parameter_frequency > 0 ? parameter_frequency : 0);
 
-	vr::EVRInitError error;
+	// create collect
+	std::thread th_collect(CollectMessage, &msg, frequency);
 
-	vr::IVRSystem* vr_system = vr::VR_Init(&error, vr::EVRApplicationType::VRApplication_Background);
+	// create consumers
+	CoutMessagePrinter printer(msg);
+	std::thread th_print(&CoutMessagePrinter::run, &printer);
 
-	if(error == vr::EVRInitError::VRInitError_None)
-	{
-		vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+	// Wait collect thread finished
+	th_collect.join();
 
-		std::future<bool> future = std::async(exitProcess);
+	// Stop consumers
+	printer.setStop();
 
-		while(future.wait_for(std::chrono::milliseconds(frequency)) != std::future_status::ready || !future.get())
-		{
-			const auto time = std::chrono::system_clock::now();
+	// Signal message to free consumers
+	msg.signal();
 
-			vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
-
-			const unsigned long long timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
-			vr::HmdMatrix34_t matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
-
-			msg.set(timestamp, matrix);
-			msg.print();
-		}
-
-		vr::VR_Shutdown();
-	}
+	// join consumers
+	th_print.join();
 
 	return 0;
 }
