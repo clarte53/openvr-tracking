@@ -1,3 +1,6 @@
 [submodule "openvr"]
 	path = openvr
 	url = https://github.com/ValveSoftware/openvr.git
+[submodule "sockpp"]
+	path = sockpp
+	url = https://github.com/fpagliughi/sockpp.git
