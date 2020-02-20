@@ -7,15 +7,42 @@ application in a simple interroperable way.
 # Getting started
 
 This application should be built as a standard console application. The
-application should then be launched from another application as a process, and
-it's standard output should be redirected to get the data.
+application could then be launched from another application as a process, and
+it's standard output should be redirected to get the data. An other way, is
+to launch the application with a socket port as second parameter. In this
+case the application open a TCP server listenning for connection then
+streaming the data.
 
-The update frequency can be passed on the command line as the first parameter.
+The update frequency is passed on the command line as the first parameter.
 The frequency is expected to be an unsigned integer representing the timespan
 between to captured frame, in milliseconds. The default value is 10
 milliseconds.
 
 To close the application, press the enter key.
+
+## Build procedure
+
+To build application start by building the sockpp submodule first.
+
+```shell
+cd sockpp
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=.. ..
+```
+
+open and build `sockpp.sln`.
+
+Next build the final application
+
+```shell
+cd ..\..
+mkdir build
+cd build
+cmake ..
+```
+
+open and build `OpenVR-Tracking.sln`.
 
 # Data format
 
