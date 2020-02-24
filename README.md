@@ -74,16 +74,23 @@ OpenVR API for the head pose of the HMD in the tracking system. The timestamp
 is the time in nanoseconds since epoch (Unix time, i.e since 01/01/1970).
 
 If option `-all` is set each tracked device is printed with the format: 
-`[name#serial]` followed by n series of 12 floats representing a HmdMatrix34_t.
+`[type#name#serial]` followed 2 unsigned long long (64bits) buttons status
+pressed and touched then by 12 floats representing a HmdMatrix34_t. Type is
+`T` for tracker `CR` for right controller, `CL` for left controller, and `C?`
+for unknown hand assigned controller.
 
 ## Data sample
 Here is a sample of data with one controller and one tracker connected:
 
-7429c90e2f73f5157b3a2a3f52ce47bede8f38bf217a643f3f3329bb49f4763f1de586be100d473f77333f3fdd4d353e9f15243f218488bf[vive_controller#LHR-FFCD3B46]e092323f8bfb29be267132bf32df003f772939bde7ed753f2f4c8cbe1a5d503f2211373f1aff633eb9a0293faded14c0[vive_tracker#LHR-19B5D14E]82f2513f4f7c12bf2102a33adaf4783fd73ccabb528834bcc5fa7fbfac4c3d3f377a123fb9ed513f08eb4dbcfeb6b3bf
+706f11862e5df6157b3a2a3f52ce47bede8f38bf217a643f3f3329bb49f4763f1de586be100d473f77333f3fdd4d353e9f15243f218488bf[T#vive_tracker#LHR-19B5D14E]0000000000000000000000000000000040b996be90a374bf8d78393c186aa33f6fea043afaa044bc45fb7fbf00d63a3ff2a7743fb7b596bef8a4833b3b24adbf[CR#vive_controller#LHR-FFF75945]00000000000000000000000000000000324bdabe35716fbe0db25fbf658d833fa2a221bd4c4b783f4f0e76beec0b4e3f8b58673fe8318bbd7c72d8bebd018cbf
 
 ```
-TimeStamp: 7429c90e2f73f515
-Head position: 7b3a2a3f52ce47bede8f38bf217a643f3f3329bb49f4763f1de586be100d473f77333f3fdd4d353e9f15243f218488bf
-First controller: [vive_controller#LHR-FFCD3B46]e092323f8bfb29be267132bf32df003f772939bde7ed753f2f4c8cbe1a5d503f2211373f1aff633eb9a0293faded14c0
-First tracker: [vive_tracker#LHR-19B5D14E]82f2513f4f7c12bf2102a33adaf4783fd73ccabb528834bcc5fa7fbfac4c3d3f377a123fb9ed513f08eb4dbcfeb6b3bf
+TimeStamp: 706f11862e5df615
+Head position : 7b3a2a3f52ce47bede8f38bf217a643f3f3329bb49f4763f1de586be100d473f77333f3fdd4d353e9f15243f218488bf
+First Tracker id : [T#vive_tracker#LHR-19B5D14E]
+First Tracker buttons: pressed 0000000000000000 touched 0000000000000000
+First Tracker position : 40b996be90a374bf8d78393c186aa33f6fea043afaa044bc45fb7fbf00d63a3ff2a7743fb7b596bef8a4833b3b24adbf
+Right controller id : [CR#vive_controller#LHR-FFF75945]
+Right controller buttons : pressed 0000000002000000 touched 0000000002000000
+Right controller position : 324bdabe35716fbe0db25fbf658d833fa2a221bd4c4b783f4f0e76beec0b4e3f8b58673fe8318bbd7c72d8bebd018cbf
 ```

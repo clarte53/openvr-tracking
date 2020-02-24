@@ -55,6 +55,7 @@ public:
 		// extract head pose
 		vr::HmdMatrix34_t head_matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
 		std::vector<vr::TrackedDeviceIndex_t> positions;
+		std::vector<std::tuple<unsigned long long, unsigned long long>> buttons;
 		std::vector<std::string> ids;
 
 		if (provide_all) {
@@ -64,12 +65,35 @@ public:
 					vr_system->GetStringTrackedDeviceProperty(idx, vr::ETrackedDeviceProperty::Prop_SerialNumber_String, buffer, 1024);
 					std::string serial(buffer);
 
+					vr::ETrackedDeviceClass trackedDeviceClass = vr_system->GetTrackedDeviceClass(idx);
+					std::string device_class;
+					if (trackedDeviceClass == vr::ETrackedDeviceClass::TrackedDeviceClass_Controller) {
+						vr::ETrackedControllerRole role = vr_system->GetControllerRoleForTrackedDeviceIndex(idx);
+						if (role == vr::ETrackedControllerRole::TrackedControllerRole_LeftHand) {
+							device_class = "CL";
+						} else if(role == vr::ETrackedControllerRole::TrackedControllerRole_RightHand) {
+							device_class = "CR";
+						} else {
+							device_class = "C?";
+						}
+					} else if (trackedDeviceClass == vr::ETrackedDeviceClass::TrackedDeviceClass_GenericTracker) {
+						device_class = "T";
+					}
+
+					vr::VRControllerState_t controllerState;
+					unsigned long long button_pressed = 0, button_touched = 0;
+					if (vr_system->GetControllerState(idx, &controllerState, sizeof(controllerState))) {
+						button_pressed = controllerState.ulButtonPressed;
+						button_touched = controllerState.ulButtonTouched;
+					}
+
 					vr_system->GetStringTrackedDeviceProperty(idx, vr::ETrackedDeviceProperty::Prop_ControllerType_String, buffer, 1024);
 					std::string type(buffer);
 
-					if (type != "") {
+					if (type != "" && device_class != "") {
 						positions.push_back(idx);
-						ids.push_back("[" + type + "#" + serial + "]");
+						ids.push_back("[" + device_class + "#" + type + "#" + serial + "]");
+						buttons.push_back(std::make_tuple(button_pressed, button_touched));
 					}
 				}
 			}
@@ -87,7 +111,16 @@ public:
 			print_to_stream(&timestamp, long_bytes, long_size);
 			print_matrix_to_stream(head_matrix);
 			for (int i = 0; i < ids.size(); ++i) {
+				//Info
 				ss << ids[i];
+				unsigned long long but;
+				//press
+				but = std::get<0>(buttons[i]);
+				print_to_stream(&but, long_bytes, long_size);
+				//touch
+				but = std::get<1>(buttons[i]);
+				print_to_stream(&but, long_bytes, long_size);
+				//matrix
 				vr::TrackedDeviceIndex_t idx = positions[i];
 				vr::HmdMatrix34_t matrix = poses[idx].mDeviceToAbsoluteTracking;
 				print_matrix_to_stream(matrix);
