@@ -19,6 +19,9 @@ bool exitProcess()
 }
 
 class Message {
+	bool provide_all;
+	vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+
 	std::stringstream ss;
 	const size_t long_size = sizeof(long long);
 	const size_t float_size = sizeof(float);
@@ -28,7 +31,7 @@ class Message {
 	std::condition_variable new_message;
 
 public:
-	Message() {
+	Message(bool all) : provide_all(all) {
 		ss << std::hex;
 		long_bytes = new char[long_size];
 		float_bytes = new char[float_size];
@@ -39,24 +42,93 @@ public:
 		delete[] float_bytes;
 	}
 
-	void set(unsigned long long timestamp, vr::HmdMatrix34_t& matrix) {
-		std::unique_lock<std::mutex> lk(mtx);
+	void set(vr::IVRSystem* vr_system) {
+		// get system time
+		const auto time = std::chrono::system_clock::now();
 
-		//Reset buffer content
-		ss.str("");
-		ss.clear();
-		
-		//Construct message
-		print_to_stream(&timestamp, long_bytes, long_size, ss);
-		for (size_t i = 0; i < 3; ++i)
-		{
-			for (size_t j = 0; j < 4; ++j)
-			{
-				print_to_stream(&matrix.m[i][j], float_bytes, float_size, ss);
+		// collect data
+		vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
+
+		// extract timestamp
+		const unsigned long long timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
+
+		// extract head pose
+		vr::HmdMatrix34_t head_matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
+		std::vector<vr::TrackedDeviceIndex_t> positions;
+		std::vector<std::tuple<unsigned long long, unsigned long long>> buttons;
+		std::vector<std::string> ids;
+
+		if (provide_all) {
+			for (vr::TrackedDeviceIndex_t idx = 1; idx < vr::k_unMaxTrackedDeviceCount; ++idx) {
+				if (vr_system->IsTrackedDeviceConnected(idx) && poses[idx].bPoseIsValid) {
+					char buffer[1024];
+					vr_system->GetStringTrackedDeviceProperty(idx, vr::ETrackedDeviceProperty::Prop_SerialNumber_String, buffer, 1024);
+					std::string serial(buffer);
+
+					vr::ETrackedDeviceClass trackedDeviceClass = vr_system->GetTrackedDeviceClass(idx);
+					std::string device_class;
+					if (trackedDeviceClass == vr::ETrackedDeviceClass::TrackedDeviceClass_Controller) {
+						vr::ETrackedControllerRole role = vr_system->GetControllerRoleForTrackedDeviceIndex(idx);
+						if (role == vr::ETrackedControllerRole::TrackedControllerRole_LeftHand) {
+							device_class = "CL";
+						} else if(role == vr::ETrackedControllerRole::TrackedControllerRole_RightHand) {
+							device_class = "CR";
+						} else {
+							device_class = "C?";
+						}
+					} else if (trackedDeviceClass == vr::ETrackedDeviceClass::TrackedDeviceClass_GenericTracker) {
+						device_class = "T";
+					}
+
+					vr::VRControllerState_t controllerState;
+					unsigned long long button_pressed = 0, button_touched = 0;
+					if (vr_system->GetControllerState(idx, &controllerState, sizeof(controllerState))) {
+						button_pressed = controllerState.ulButtonPressed;
+						button_touched = controllerState.ulButtonTouched;
+					}
+
+					vr_system->GetStringTrackedDeviceProperty(idx, vr::ETrackedDeviceProperty::Prop_ControllerType_String, buffer, 1024);
+					std::string type(buffer);
+
+					if (type != "" && device_class != "") {
+						positions.push_back(idx);
+						ids.push_back("[" + device_class + "#" + type + "#" + serial + "]");
+						buttons.push_back(std::make_tuple(button_pressed, button_touched));
+					}
+				}
 			}
 		}
-		ss<<std::endl;
-		new_message.notify_all();
+
+		// Start section with stringstream locked
+		{
+			std::unique_lock<std::mutex> lk(mtx);
+
+			//Reset buffer content
+			ss.str("");
+			ss.clear();
+
+			//Construct message
+			print_to_stream(&timestamp, long_bytes, long_size);
+			print_matrix_to_stream(head_matrix);
+			for (int i = 0; i < ids.size(); ++i) {
+				//Info
+				ss << ids[i];
+				unsigned long long but;
+				//press
+				but = std::get<0>(buttons[i]);
+				print_to_stream(&but, long_bytes, long_size);
+				//touch
+				but = std::get<1>(buttons[i]);
+				print_to_stream(&but, long_bytes, long_size);
+				//matrix
+				vr::TrackedDeviceIndex_t idx = positions[i];
+				vr::HmdMatrix34_t matrix = poses[idx].mDeviceToAbsoluteTracking;
+				print_matrix_to_stream(matrix);
+			}
+
+			ss << std::endl;
+			new_message.notify_all();
+		}
 	}
 
 	void signal() {
@@ -73,13 +145,21 @@ public:
 	}
 
 private:
-	static void print_to_stream(const void* data, char* bytes, size_t size, std::ostream& stream)
+	void print_matrix_to_stream(vr::HmdMatrix34_t& matrix) {
+		for (size_t i = 0; i < 3; ++i) {
+			for (size_t j = 0; j < 4; ++j) {
+				print_to_stream(&matrix.m[i][j], float_bytes, float_size);
+			}
+		}
+	}
+
+	void print_to_stream(const void* data, char* bytes, size_t size)
 	{
 		memcpy(bytes, data, size);
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			stream << std::setfill('0') << std::setw(2) << (0xFF & bytes[i]);
+			ss << std::setfill('0') << std::setw(2) << (0xFF & bytes[i]);
 		}
 	}
 };
@@ -92,20 +172,11 @@ void CollectMessage(Message* msg, unsigned int frequency) {
 
 	if (error == vr::EVRInitError::VRInitError_None)
 	{
-		vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
-
 		std::future<bool> future = std::async(exitProcess);
 
 		while (future.wait_for(std::chrono::milliseconds(frequency)) != std::future_status::ready || !future.get())
 		{
-			const auto time = std::chrono::system_clock::now();
-
-			vr_system->GetDeviceToAbsoluteTrackingPose(vr::ETrackingUniverseOrigin::TrackingUniverseStanding, 0, poses, vr::k_unMaxTrackedDeviceCount);
-
-			const unsigned long long timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
-			vr::HmdMatrix34_t matrix = poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
-
-			msg->set(timestamp, matrix);
+			msg->set(vr_system);
 		}
 
 		vr::VR_Shutdown();
@@ -200,14 +271,25 @@ int main(int argc, const char* argv[])
 	sockpp::socket_initializer sockInit;
 
 	const unsigned int default_frequency = 10; // In milliseconds
-	Message msg;
 
 	int parameter_frequency = (argc > 1 ? atoi(argv[1]) : 0);
-	int socket_port = (argc > 2 ? atoi(argv[2]) : 0);
+	int socket_port = 0;
+	bool all = false;
+	if (argc > 2) {
+		for (int i = 2; i < argc; ++i) {
+			std::string arg(argv[i]);
+			if (arg.length() > 0 && arg[0] == '-') {
+				if (arg == "-all") { all = true; }
+			} else {
+				socket_port = atoi(argv[i]);
+			}
+		}
+	}
 
-	unsigned int frequency = (parameter_frequency > 0 ? parameter_frequency : 0);
+	unsigned int frequency = (parameter_frequency > default_frequency ? parameter_frequency : default_frequency);
 
 	// create collect
+	Message msg(all);
 	std::thread th_collect(CollectMessage, &msg, frequency);
 
 	MessageProvider* provider = nullptr;
